@@ -1,0 +1,30 @@
+services:
+  api:
+    build:
+      context: .
+      target: base
+    ports:
+      - "8000:8000"
+    environment:
+      LLM_MODE: ${LLM_MODE:-mock}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  test:
+    build:
+      context: .
+      target: test
+    environment:
+      LLM_MODE: mock
+    profiles: ["test"]
