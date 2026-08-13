@@ -7,19 +7,27 @@ from langgraph.graph import END, START, StateGraph
 from app.graph.nodes import (
     bouncer_node,
     collect_identity_node,
+    followup_node,
     greeter_node,
     guardrails_node,
     secret_node,
     specialist_node,
+    _wants_specialist,
 )
 from app.graph.state import AgentState
-from app.schemas.api import ConversationPhase
+from app.schemas.api import ClientType, ConversationPhase
 
 
 def _after_guardrails(state: AgentState) -> str:
     if state.get("blocked") or state.get("halt_turn"):
         return "end"
     if state.get("fully_verified"):
+        phase = state.get("phase")
+        latest = state.get("latest_user_message", "")
+        if phase == ConversationPhase.COMPLETED:
+            if state.get("client_type") == ClientType.PREMIUM and _wants_specialist(latest):
+                return "specialist"
+            return "followup"
         return "bouncer"
     phase = state.get("phase")
     if phase == ConversationPhase.AWAITING_SECRET:
@@ -69,6 +77,7 @@ def build_graph():
     graph.add_node("secret", secret_node)
     graph.add_node("bouncer", bouncer_node)
     graph.add_node("specialist", specialist_node)
+    graph.add_node("followup", followup_node)
 
     graph.add_edge(START, "guardrails")
     graph.add_conditional_edges(
@@ -81,6 +90,7 @@ def build_graph():
             "secret": "secret",
             "bouncer": "bouncer",
             "specialist": "specialist",
+            "followup": "followup",
         },
     )
     graph.add_conditional_edges(
@@ -100,6 +110,7 @@ def build_graph():
         {"end": END, "specialist": "specialist"},
     )
     graph.add_edge("specialist", END)
+    graph.add_edge("followup", END)
     return graph.compile()
 
 
