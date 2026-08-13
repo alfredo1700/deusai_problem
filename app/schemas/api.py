@@ -46,6 +46,12 @@ class ChatResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class VoiceChatResponse(ChatResponse):
+    transcript: str
+    translated: bool = False
+    stt_model: str = "whisper-1"
+
+
 class HealthResponse(BaseModel):
     status: str
     app: str

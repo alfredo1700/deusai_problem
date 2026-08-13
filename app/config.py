@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     app_name: str = "DEUS Bank Support API"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
+    # OpenAI STT model for /chat/voice (no local weights). whisper-1 is the simple default.
+    whisper_model: str = "whisper-1"
     # "mock" = no external LLM calls; "openai" = LangChain ChatOpenAI
     llm_mode: str = "mock"
 
