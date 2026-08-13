@@ -6,7 +6,12 @@ from app.data.bank_data import SPECIALIST_KEYWORDS, USERS, get_account
 from app.graph.extraction import extract_identity_fields, merge_identity
 from app.graph.state import AgentState
 from app.schemas.api import ClientType, ConversationPhase
-from app.services.guardrails import guardrail_refusal, is_disallowed_request, sanitize_outbound
+from app.services.guardrails import (
+    classify_guardrail,
+    guardrail_refusal,
+    off_topic_redirect,
+    sanitize_outbound,
+)
 from app.services.llm import craft_reply
 from app.services.verification import check_secret_answer, verify_identity
 
@@ -16,16 +21,27 @@ REGULAR_SUPPORT = "+1112112112"
 
 def guardrails_node(state: AgentState) -> dict:
     message = state.get("latest_user_message", "")
-    if is_disallowed_request(message):
+    verdict = classify_guardrail(message)
+    if verdict == "policy":
         reply = guardrail_refusal()
         return {
             "blocked": True,
+            "halt_turn": True,
             "phase": ConversationPhase.BLOCKED,
             "reply": reply,
             "messages": [{"role": "assistant", "content": reply}],
             "metadata": {"guardrail": "policy_violation"},
         }
-    return {"blocked": False}
+    if verdict == "off_topic":
+        reply = off_topic_redirect()
+        return {
+            "blocked": False,
+            "halt_turn": True,
+            "reply": reply,
+            "messages": [{"role": "assistant", "content": reply}],
+            "metadata": {"guardrail": "off_topic"},
+        }
+    return {"blocked": False, "halt_turn": False}
 
 
 def greeter_node(state: AgentState) -> dict:

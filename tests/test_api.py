@@ -37,6 +37,12 @@ def test_chat_session_flow():
     assert body["fully_verified"] is True
     assert body["client_type"] == "premium"
     assert "+1999888999" in body["reply"]
+    assert body["turn"] == 3
+    assert len(body["history"]) >= 4
+    remembered = client.get(f"/sessions/{session_id}")
+    assert remembered.status_code == 200
+    assert remembered.json()["fully_verified"] is True
+    assert remembered.json()["turn"] == 3
 
 
 def test_reset_session():
@@ -44,5 +50,7 @@ def test_reset_session():
     client.post("/chat", json={"session_id": session_id, "message": "Hello"})
     deleted = client.delete(f"/sessions/{session_id}")
     assert deleted.status_code == 200
+    missing = client.get(f"/sessions/{session_id}")
+    assert missing.status_code == 404
     again = client.post("/chat", json={"session_id": session_id, "message": "Hello"})
     assert again.json()["phase"] == "collecting_identity"
