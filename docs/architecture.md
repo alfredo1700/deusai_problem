@@ -40,10 +40,13 @@ flowchart TD
 ## API
 
 - `GET /health` — liveness + LLM mode
-- `POST /chat` — `{ session_id, message }` → reply + phase + client_type
+- `POST /chat` — `{ session_id, message }` → reply + phase + client_type + `history` + `turn`
+- `GET /sessions/{session_id}` — recall conversation memory
 - `DELETE /sessions/{session_id}` — clear conversation memory
 
-Sessions keep **conversation history** in memory for multi-turn verification and specialist keyword detection.
+Sessions keep **conversation history** in memory for multi-turn verification, specialist keyword detection, and API recall.
+
+Guardrails distinguish **policy violations** (hard block) from **off-topic** talk (redirect, session continues).
 
 ## Security notes
 
