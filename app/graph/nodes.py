@@ -269,9 +269,7 @@ def bouncer_node(state: AgentState) -> dict:
 
 
 def specialist_node(state: AgentState) -> dict:
-    if state.get("blocked"):
-        return {}
-    if state.get("phase") != ConversationPhase.SPECIALIST and not state.get("needs_specialist"):
+    if state.get("blocked") or not state.get("fully_verified"):
         return {}
 
     topic = state.get("latest_user_message", "your high-value request")
@@ -294,9 +292,56 @@ def specialist_node(state: AgentState) -> dict:
     return {
         "client_type": ClientType.PREMIUM,
         "phase": ConversationPhase.COMPLETED,
+        "needs_specialist": True,
         "reply": reply,
         "messages": [{"role": "assistant", "content": reply}],
         "metadata": {"agent": "specialist", "routed_to": "private_client_services"},
+    }
+
+
+def followup_node(state: AgentState) -> dict:
+    """Handle turns after routing so the bouncer script is not replayed forever."""
+    if state.get("blocked") or not state.get("fully_verified"):
+        return {}
+
+    client_type = state.get("client_type") or ClientType.UNKNOWN
+    name = state.get("matched_user_name") or "there"
+    topic = state.get("latest_user_message", "")
+    if client_type == ClientType.PREMIUM:
+        fallback = (
+            f"You're already verified as a premium client, {name}. "
+            f"I can keep helping with: {topic}. For live support, call {PREMIUM_SUPPORT}."
+        )
+        desk = f"premium desk at {PREMIUM_SUPPORT}"
+    elif client_type == ClientType.REGULAR:
+        fallback = (
+            f"You're already verified as a regular client, {name}. "
+            f"I can keep helping with: {topic}. For live support, call {REGULAR_SUPPORT}."
+        )
+        desk = f"support desk at {REGULAR_SUPPORT}"
+    else:
+        fallback = (
+            "We still do not have an active DEUS Bank account on file. "
+            "Please contact your own bank's support department directly."
+        )
+        desk = "your bank"
+
+    reply = craft_reply(
+        system=(
+            "You are a DEUS Bank assistant continuing a verified session. "
+            f"The caller is {client_type.value} ({name}). Acknowledge their new message, "
+            f"stay on banking support, and mention {desk} if they need a human. "
+            "Do not approve loans, move money, or invent account balances."
+        ),
+        user=topic,
+        fallback=fallback,
+    )
+    reply = sanitize_outbound(reply, fully_verified=True)
+    return {
+        "phase": ConversationPhase.COMPLETED,
+        "reply": reply,
+        "messages": [{"role": "assistant", "content": reply}],
+        "metadata": {"agent": "followup"},
     }
 
 

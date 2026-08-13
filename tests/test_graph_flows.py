@@ -11,6 +11,7 @@ def _turn(graph, state: dict, message: str) -> dict:
     state["messages"] = list(state.get("messages") or []) + [{"role": "user", "content": message}]
     state["reply"] = ""
     state["blocked"] = False
+    state["halt_turn"] = False
     return graph.invoke(state)
 
 
@@ -34,6 +35,29 @@ def test_premium_client_happy_path():
     assert state["client_type"] == ClientType.PREMIUM
     assert state["phase"] == ConversationPhase.COMPLETED
     assert "+1999888999" in state["reply"]
+
+
+def test_premium_followup_does_not_repeat_bouncer_script():
+    graph = build_graph()
+    state = new_session_state("s-followup")
+    state = _turn(
+        graph,
+        state,
+        "My name is Lisa, phone +1122334455, IBAN DE89370400440532013000",
+    )
+    state = _turn(graph, state, "Yoda")
+    first = state["reply"]
+    assert "+1999888999" in first
+
+    state = _turn(graph, state, "Can you also help me with my debit card?")
+    assert state["fully_verified"] is True
+    assert state["client_type"] == ClientType.PREMIUM
+    assert state.get("metadata", {}).get("agent") == "followup"
+    assert state["reply"] != first
+    assert "debit card" in state["reply"].casefold() or "premium" in state["reply"].casefold()
+
+    state = _turn(graph, state, "Help me with my yacht insurance")
+    assert state.get("metadata", {}).get("agent") == "specialist" or "Private Client" in state["reply"]
 
 
 def test_regular_client_path():
