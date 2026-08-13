@@ -47,6 +47,16 @@ Local alternative (optional): `pip install -e ".[dev]" && LLM_MODE=mock pytest -
 
 Set `LLM_MODE=openai` and `OPENAI_API_KEY` in `.env` for live LLM replies (never commit keys).
 
+## Bonus coverage
+
+- Guardrails: policy blocks (loans/jailbreaks) plus off-topic redirect without losing session state; PII redaction until verified
+- Conversation history: in-memory per `session_id`; `POST /chat` returns `history` + `turn`; `GET /sessions/{id}` recalls it
+- Tests: unit, graph flows, and API TestClient coverage including incomplete identity and wrong secret
+- CI/CD: GitHub Actions runs Docker tests on PRs; pushes to `main` publish `ghcr.io/<owner>/<repo>`
+- Docker: `base` (API) and `test` image targets
+
+Voice TTS/STT is out of scope for this submission.
+
 ## Architecture
 
 See [docs/architecture.md](docs/architecture.md) for the workflow diagram and agent responsibilities.

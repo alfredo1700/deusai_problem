@@ -28,6 +28,7 @@ def new_session_state(session_id: str) -> dict[str, Any]:
         "match_count": 0,
         "needs_specialist": False,
         "blocked": False,
+        "halt_turn": False,
         "metadata": {},
     }
 
@@ -46,6 +47,11 @@ class SessionStore:
     def save(self, session_id: str, state: dict[str, Any]) -> None:
         with self._lock:
             self._sessions[session_id] = deepcopy(state)
+
+    def peek(self, session_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            stored = self._sessions.get(session_id)
+            return deepcopy(stored) if stored else None
 
     def clear(self, session_id: str) -> None:
         with self._lock:

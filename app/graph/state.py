@@ -36,4 +36,5 @@ class AgentState(TypedDict, total=False):
 
     needs_specialist: bool
     blocked: bool
+    halt_turn: bool
     metadata: Annotated[dict[str, Any], _merge_dict]
