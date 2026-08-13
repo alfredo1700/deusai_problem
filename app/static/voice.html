@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DEUS Bank — voice demo</title>
+  <style>
+    :root { font-family: sans-serif; color: #111; background: #f6f7f9; }
+    body { max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.25rem; }
+    label, button { display: block; margin: 0.75rem 0 0.35rem; }
+    input[type="text"] { width: 100%; padding: 0.45rem; }
+    button { padding: 0.55rem 0.9rem; cursor: pointer; }
+    pre { background: #fff; border: 1px solid #ddd; padding: 0.75rem; overflow: auto; }
+    .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    .hint { color: #555; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>DEUS Bank voice demo</h1>
+  <p class="hint">
+    Records a short clip, sends it to <code>POST /chat/voice</code> (OpenAI Whisper),
+    then the same LangGraph chat flow. Optional: translate the audio into English first.
+  </p>
+  <label>session_id
+    <input id="session" type="text" value="voice-demo" />
+  </label>
+  <label class="row">
+    <input id="translate" type="checkbox" />
+    Translate audio to English before the graph (Whisper translations)
+  </label>
+  <div class="row">
+    <button id="rec" type="button">Start recording</button>
+    <button id="stop" type="button" disabled>Stop and send</button>
+  </div>
+  <p id="status" class="hint">Idle.</p>
+  <h2>Transcript</h2>
+  <pre id="transcript">(none yet)</pre>
+  <h2>Assistant reply</h2>
+  <pre id="reply">(none yet)</pre>
+  <h2>Raw JSON</h2>
+  <pre id="raw">(none yet)</pre>
+  <script>
+    const recBtn = document.getElementById("rec");
+    const stopBtn = document.getElementById("stop");
+    const status = document.getElementById("status");
+    let mediaRecorder = null;
+    let chunks = [];
+
+    recBtn.onclick = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      chunks = [];
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = (ev) => { if (ev.data.size) chunks.push(ev.data); };
+      mediaRecorder.start();
+      recBtn.disabled = true;
+      stopBtn.disabled = false;
+      status.textContent = "Recording… speak, then stop.";
+    };
+
+    stopBtn.onclick = async () => {
+      if (!mediaRecorder) return;
+      await new Promise((resolve) => {
+        mediaRecorder.onstop = resolve;
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach((t) => t.stop());
+      });
+      recBtn.disabled = false;
+      stopBtn.disabled = true;
+      status.textContent = "Uploading to /chat/voice…";
+
+      const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
+      const form = new FormData();
+      form.append("session_id", document.getElementById("session").value || "voice-demo");
+      form.append("translate", document.getElementById("translate").checked ? "true" : "false");
+      form.append("audio", blob, "clip.webm");
+
+      const res = await fetch("/chat/voice", { method: "POST", body: form });
+      const body = await res.json();
+      document.getElementById("raw").textContent = JSON.stringify(body, null, 2);
+      if (!res.ok) {
+        status.textContent = "Error " + res.status;
+        document.getElementById("transcript").textContent = body.detail || "failed";
+        document.getElementById("reply").textContent = "";
+        return;
+      }
+      status.textContent = "Done. Same session_id can continue with text POST /chat.";
+      document.getElementById("transcript").textContent = body.transcript;
+      document.getElementById("reply").textContent = body.reply;
+    };
+  </script>
+</body>
+</html>

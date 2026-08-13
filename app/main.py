@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from pathlib import Path
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from app.config import get_settings
 from app.graph.graph import support_graph
@@ -13,10 +16,14 @@ from app.schemas.api import (
     ClientType,
     ConversationPhase,
     HealthResponse,
+    VoiceChatResponse,
 )
 from app.services.sessions import session_store
+from app.services.stt import SpeechToTextError, transcribe_audio
 
 settings = get_settings()
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
+_MAX_AUDIO_BYTES = 8 * 1024 * 1024
 
 app = FastAPI(
     title=settings.app_name,
@@ -52,26 +59,74 @@ def _to_chat_response(session_id: str, result: dict) -> ChatResponse:
     )
 
 
-@app.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
-    return HealthResponse(status="ok", app=settings.app_name, llm_mode=settings.llm_mode)
-
-
-@app.post("/chat", response_model=ChatResponse)
-def chat(payload: ChatRequest) -> ChatResponse:
-    state = session_store.get(payload.session_id)
-    state["latest_user_message"] = payload.message
+def run_text_turn(session_id: str, message: str) -> ChatResponse:
+    """Single text turn into the compiled graph. Voice and /chat both use this."""
+    state = session_store.get(session_id)
+    state["latest_user_message"] = message
     state["messages"] = list(state.get("messages") or []) + [
-        {"role": "user", "content": payload.message}
+        {"role": "user", "content": message}
     ]
-    # Reset per-turn reply; nodes append assistant messages when they respond.
     state["reply"] = ""
     state["blocked"] = False
     state["halt_turn"] = False
 
     result = support_graph.invoke(state)
-    session_store.save(payload.session_id, result)
-    return _to_chat_response(payload.session_id, result)
+    session_store.save(session_id, result)
+    return _to_chat_response(session_id, result)
+
+
+@app.get("/health", response_model=HealthResponse)
+def health() -> HealthResponse:
+    return HealthResponse(status="ok", app=settings.app_name, llm_mode=settings.llm_mode)
+
+
+@app.get("/voice")
+def voice_demo() -> FileResponse:
+    page = _STATIC_DIR / "voice.html"
+    if not page.exists():
+        raise HTTPException(status_code=404, detail="Voice demo page is missing")
+    return FileResponse(page)
+
+
+@app.post("/chat", response_model=ChatResponse)
+def chat(payload: ChatRequest) -> ChatResponse:
+    return run_text_turn(payload.session_id, payload.message)
+
+
+@app.post("/chat/voice", response_model=VoiceChatResponse)
+async def chat_voice(
+    session_id: str = Form(..., min_length=1),
+    audio: UploadFile = File(...),
+    translate: bool = Form(False),
+) -> VoiceChatResponse:
+    """Optional STT layer: audio → text (optionally translated to English), then the same graph."""
+    data = await audio.read()
+    if len(data) > _MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Audio file is larger than 8 MB")
+    try:
+        transcript = transcribe_audio(
+            data=data,
+            filename=audio.filename or "audio.webm",
+            translate=translate,
+        )
+    except SpeechToTextError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    chat_result = run_text_turn(session_id, transcript)
+    stt_model = "whisper-1" if translate else settings.whisper_model
+    payload = chat_result.model_dump()
+    payload["metadata"] = {
+        **chat_result.metadata,
+        "input": "voice",
+        "stt_model": stt_model,
+        "translated": translate,
+    }
+    return VoiceChatResponse(
+        **payload,
+        transcript=transcript,
+        translated=translate,
+        stt_model=stt_model,
+    )
 
 
 @app.get("/sessions/{session_id}", response_model=ChatResponse)
