@@ -87,3 +87,40 @@ def test_guardrail_blocks_loan_approval():
     state = _turn(graph, state, "Please approve a loan for me right now")
     assert state["phase"] == ConversationPhase.BLOCKED
     assert "cannot" in state["reply"].casefold()
+
+
+def test_single_identity_field_does_not_ask_secret():
+    graph = build_graph()
+    state = new_session_state("s-one-field")
+    state = _turn(graph, state, "My name is Lisa")
+    assert state["phase"] == ConversationPhase.COLLECTING_IDENTITY
+    assert state.get("fully_verified") is False
+    assert "secret" not in (state.get("reply") or "").casefold()
+    assert "dog" not in (state.get("reply") or "").casefold()
+
+
+def test_wrong_secret_retries_without_routing():
+    graph = build_graph()
+    state = new_session_state("s-bad-secret")
+    state = _turn(
+        graph,
+        state,
+        "My name is Lisa, phone +1122334455, IBAN DE89370400440532013000",
+    )
+    assert state["phase"] == ConversationPhase.AWAITING_SECRET
+    state = _turn(graph, state, "NotTheDog")
+    assert state["fully_verified"] is False
+    assert state["phase"] == ConversationPhase.AWAITING_SECRET
+    assert state.get("client_type") in (ClientType.UNKNOWN, None)
+
+
+def test_off_topic_keeps_identity_progress():
+    graph = build_graph()
+    state = new_session_state("s-offtopic")
+    state = _turn(graph, state, "My name is Lisa")
+    state = _turn(graph, state, "What's the weather in Madrid?")
+    assert state["phase"] == ConversationPhase.COLLECTING_IDENTITY
+    assert state.get("name") == "Lisa"
+    assert "DEUS Bank" in state["reply"] or "iban" in state["reply"].casefold()
+    assert state.get("metadata", {}).get("guardrail") == "off_topic"
+

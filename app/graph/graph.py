@@ -17,7 +17,7 @@ from app.schemas.api import ConversationPhase
 
 
 def _after_guardrails(state: AgentState) -> str:
-    if state.get("blocked"):
+    if state.get("blocked") or state.get("halt_turn"):
         return "end"
     if state.get("fully_verified"):
         return "bouncer"
